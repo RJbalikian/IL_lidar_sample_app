@@ -4,3 +4,4 @@ owslib
 pyproj
 geopandas
 matplotlib
+plotly
