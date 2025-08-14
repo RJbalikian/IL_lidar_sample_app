@@ -5,9 +5,13 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import rioxarray as rxr
 import streamlit as st
-import matplotlib
+from rasterio import MemoryFile
+from owslib.wms import WebMapService
+from io import BytesIO
+import plotly.graph_objects as go
+import plotly.express as px
 
-matplotlib.use("TKAgg")
+#matplotlib.use("agg")
 
 CRS_LIST = pyproj.database.query_crs_info()
 CRS_STR_LIST = [f"{crs.auth_name}:{crs.code} - {crs.name}" for crs in CRS_LIST]
@@ -19,6 +23,7 @@ RASTER_SRC_DICT = {"ISGS Statewide Lidar":LIDAR_SERVICE_URL,
                    }
 
 def main():
+    st.session_state.main_container = st.container()
     with st.sidebar:
         st.title("Raster Sampling on the Web")
 
@@ -75,7 +80,8 @@ def main():
                   type='primary',
                   )
 
-    st.session_state.main_container=st.container()
+    if hasattr(st.session_state, 'elev_fig'):
+        st.session_state.elev_fig
 
 # FUNCTIONS
 def on_raster_source_change():
@@ -152,9 +158,6 @@ def get_elevation(coords=None,
             yPad = 1000
         
     if elev_source_type=='service':
-        from rasterio import MemoryFile
-        from owslib.wms import WebMapService
-        import rioxarray as rxr
         wms = WebMapService(wms_statewide_lidar_url)
 
         layer_name = '0'
@@ -170,10 +173,17 @@ def get_elevation(coords=None,
             transparent=True
             )
 
-        with MemoryFile(img) as memfile:
-            with memfile.open() as dataset:
-                lidarData_rxr = rxr.open_rasterio(dataset)
-        lidarData = lidarData_rxr.rio.reproject(points_crs)
+        try:
+            bio = BytesIO(img.read())
+            lidarData_rxr = rxr.open_rasterio(bio)
+            lidarData = lidarData_rxr.rio.reproject(points_crs)
+        except Exception as e:
+            print(f"BytesIO method failed: {e}")
+
+        #with MemoryFile(img) as memfile:
+            #with memfile.open() as dataset:
+        #        lidarData_rxr = rxr.open_rasterio(dataset)
+        #lidarData = lidarData_rxr.rio.reproject(points_crs)
     elif elev_source_type == 'file':
         lidarData_rxr = rxr.open_rasterio(elevation_source)
 
@@ -184,21 +194,62 @@ def get_elevation(coords=None,
     maxLidarVal = lidarData.max().values
     lidarValRange = maxLidarVal - minLidarVal
     
-    vMin = minLidarVal + 0.1*lidarValRange
-    vMax = maxLidarVal - 0.1*lidarValRange
+    vMin = minLidarVal + 0.2*lidarValRange
+    vMax = maxLidarVal - 0.2*lidarValRange
     
     if isinstance(coords, (tuple, list)):
         elev_ft = float(lidarData.sel(x=xcoord, y=ycoord, method='nearest').values[0])
         elev_m = elev_ft * 0.3048
-        print('elev', round(elev_ft, 2), 'ft    | ', round(elev_m, 2), 'm')
+        st.session_state.main_container.text(f"elev {elev_ft:.2f} ft    | {elev_m:.2f}m")
+
         if show_plot:
-            import matplotlib.pyplot as plt
-            fig, ax = plt.subplots()
-            lidarData[0].plot(ax=ax, alpha=0.75, cmap='gist_earth', vmin=vMin, vmax=vMax)
-            #print(type(ax))
-            ax.scatter(xcoord, ycoord, marker='*', s=50, c='k')
-            ax.text(xcoord, ycoord, s=f"  {elev_ft:.1f} ft \n  {elev_m:.2f} m", c='k')
-            st.pyplot(fig)
+            #fig, ax = plt.subplots()#figsize=(1,1))
+            #lidarData[0].plot(ax=ax, alpha=0.75, cmap='gist_earth', vmin=vMin, vmax=vMax)
+            data = lidarData[0].values
+            x_coords = lidarData.x.values  
+            y_coords = lidarData.y.values
+
+            # Create heatmap
+            fig = go.Figure(data=go.Heatmap(
+                z=data,
+                x=x_coords,
+                y=y_coords,
+                colorscale='Geyser',
+                zmin=vMin,
+                zmax=vMax,
+                colorbar=dict(title="Elevation (ft)")
+            ))
+            
+            # Add the point marker
+            fig.add_trace(go.Scatter(
+                x=[xcoord],
+                y=[ycoord],
+                mode='markers+text',
+                marker=dict(
+                    symbol='star',
+                    size=15,
+                    color='red',
+                    line=dict(width=2, color='black')
+                ),
+                text=[f"{elev_ft:.1f} ft<br>{elev_m:.2f} m"],
+                textposition="top right",
+                textfont=dict(color="red", size=12),
+                name=f"Point Elevation",
+                showlegend=True
+            ))
+            
+            # Update layout
+            fig.update_layout(
+                title="Lidar Elevation Data",
+                xaxis_title="X Coordinate",
+                yaxis_title="Y Coordinate",
+                width=700,
+                height=500,
+                showlegend=True
+            )
+            
+            #st.session_state.main_container.pyplot(fig)
+            st.session_state.main_container.plotly_chart(fig)
 
         coords = (coords[0], coords[1], round(elev_m, 3))
         
@@ -216,10 +267,12 @@ def get_elevation(coords=None,
             fig, ax = plt.subplots()
             lidarData[0].plot(ax=ax, alpha=0.75, cmap='gist_earth', vmin=vMin, vmax=vMax)
             ax.scatter(x=coords[xcoord_col_name], y=coords[ycoord_col_name], c='k', marker='*',)
-            with st.session_state.main_container:
-                st.pyplot(fig)
+            #with st.session_state.main_container:
+            #    st.pyplot(fig)
 
-    return fig, coords
+    st.session_state.elev_fig = fig
+
+    return #fig, coords
 
 
 
