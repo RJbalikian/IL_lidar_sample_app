@@ -80,8 +80,8 @@ def main():
                   type='primary',
                   )
 
-    if hasattr(st.session_state, 'elev_fig'):
-        st.session_state.elev_fig
+    #if hasattr(st.session_state, 'elev_fig'):
+    #    st.session_state.elev_fig
 
 # FUNCTIONS
 def on_raster_source_change():
