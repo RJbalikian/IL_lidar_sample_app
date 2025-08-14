@@ -1,0 +1,6 @@
+rioxarray
+pandas
+owslib
+pyproj
+geopandas
+matplotlib
