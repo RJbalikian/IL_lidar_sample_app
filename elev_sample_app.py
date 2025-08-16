@@ -28,7 +28,6 @@ DEFAULT_POINTS_CRS_INDEX = CRS_STR_LIST.index(DEFAULT_POINTS_CRS)
 DEFAULT_OUTPUT_CRS = DEFAULT_POINTS_CRS
 
 def main():
-    print("Start Main Loop")
     #st.container(key='main_container')
 
     with st.container():
@@ -37,33 +36,15 @@ def main():
             st.session_state.coords_df
             
     with st.sidebar:
-        print('Building sidebar')
         st.title("Raster Sampling on the Web")
-
-        st.selectbox(label="Select raster/elevation data source",
-                     options=["ISGS Statewide Lidar", "Other Web Service", "Raster file"],
-                     index=0, key='raster_source_select',
-                     help="Select the source you would like to use for elevation.",
-                     on_change=on_raster_source_change,
-                     disabled=True,
-                     )
-
-        st.selectbox(label="Raster CRS",
-                     options=CRS_STR_LIST,
-                     index=CRS_STR_LIST.index("EPSG:3857 - WGS 84 / Pseudo-Mercator"),
-                     key='raster_crs',
-                     disabled=True)
-
-
-        #raster_expander = st.expander(label='Raster Info.')
-        
-        st.segmented_control(label='Select point type',
-                             options=["Enter coords.",
-                                      "CSV File"],
-                             selection_mode='single',
-                             default="Enter coords.",
-                             key="points_source",
-                             )
+       
+        #st.segmented_control(label='Select point type',
+        #                     options=["Enter coords.",
+        #                              "CSV File"],
+        #                     selection_mode='single',
+        #                     default="Enter coords.",
+        #                     key="points_source",
+        #                     )
 
         xcoordCol, ycoordCol = st.columns(spec=[0.5, 0.5], gap='small', border=False)
     
@@ -79,14 +60,13 @@ def main():
                       key='ycoord'
                       )        
         
-        st.selectbox(label="Point CRS",
+        st.selectbox(label="CRS of Input Points",
                      options=CRS_STR_LIST,
                      index=DEFAULT_POINTS_CRS_INDEX,
                      key='point_crs')
 
         #point_expander = st.expander(label='Point Info.')
 
-        st.divider()
         st.selectbox(label="Output CRS",
                      options=CRS_STR_LIST,
                      index=DEFAULT_POINTS_CRS_INDEX,
@@ -98,8 +78,46 @@ def main():
                   on_click=get_elevation,
                   type='primary',
                   )
-        print('Done Building sidebar')
-    print("MAIN LOOP END")
+
+        st.divider()
+        
+        raster_expander = st.expander(label='Raster Info.')
+
+        with raster_expander:
+            st.selectbox(label="Select raster/elevation data source",
+                     options=["ISGS Statewide Lidar", "Other Web Service", "Raster file"],
+                     index=0, key='raster_source_select',
+                     help="Select the source you would like to use for elevation.",
+                     on_change=on_raster_source_change,
+                     disabled=True,
+                     )
+
+            st.selectbox(label="Raster CRS",
+                     options=CRS_STR_LIST,
+                     index=CRS_STR_LIST.index("EPSG:3857 - WGS 84 / Pseudo-Mercator"),
+                     key='raster_crs',
+                     disabled=True)
+
+        crs_expander = st.expander(label='Commonly used CRS',
+                                   )
+
+        with crs_expander:
+            common_CRS_ID_List = ['6345','6344', # UTM 16,15
+                                  '4326','4269', #WGS84, NAD83
+                                  '6454','6455','6456','6457'] #State plane
+            
+            commonCRS = [f"{crs.auth_name}:{crs.code} - {crs.name}" for crs in CRS_LIST if crs.code in common_CRS_ID_List]
+            st.selectbox("Commonly Used CRS",
+                        help='See commonly used CRS in Illinois and get more information about them.',
+                         options=commonCRS,
+                         key='crs_info_select')
+            st.button("Get More info about this CRS",
+                      on_click=get_crs_info, key='crs_info')
+            
+def get_crs_info():
+    import webbrowser
+    crscode = st.session_state.crs_info_select.split(":")[1].split(" ")[0]
+    webbrowser.open(f"https://epsg.io/?q={crscode}")
 
 
 # FUNCTIONS
