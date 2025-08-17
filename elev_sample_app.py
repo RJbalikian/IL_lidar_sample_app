@@ -5,7 +5,6 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import rioxarray as rxr
 import streamlit as st
-from rasterio import MemoryFile
 from owslib.wms import WebMapService
 from io import BytesIO
 import plotly.graph_objects as go
@@ -28,15 +27,13 @@ DEFAULT_POINTS_CRS_INDEX = CRS_STR_LIST.index(DEFAULT_POINTS_CRS)
 DEFAULT_OUTPUT_CRS = DEFAULT_POINTS_CRS
 
 def main():
-    #st.container(key='main_container')
-
     with st.container():
         if hasattr(st.session_state, 'elev_fig'):
             st.plotly_chart(st.session_state.elev_fig)
             st.session_state.coords_df
             
     with st.sidebar:
-        st.title("Raster Sampling on the Web")
+        st.title("Geospatial Raster Sampling")
        
         #st.segmented_control(label='Select point type',
         #                     options=["Enter coords.",
@@ -147,8 +144,8 @@ def get_elevation(coords=None,
     print("GETTING ELEVATION")
 
     if coords is None:
-        if st.session_state.points_source=='Enter coords.':
-            coords = (st.session_state.xcoord, st.session_state.ycoord)
+        coords = (st.session_state.xcoord, st.session_state.ycoord)
+        #if st.session_state.points_source=='Enter coords.':
             #coords = (-88.857362, 42.25637743)
 
     # Leave everything below here alone
@@ -313,7 +310,7 @@ def get_elevation(coords=None,
         if len(str(int(minX))) > 4:
             tickFormat = ".0f"
         else:
-            tickFormat = ".2f"
+            tickFormat = ".4f"
 
         # Update layout
         fig.update_layout(
