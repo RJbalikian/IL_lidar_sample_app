@@ -3,6 +3,7 @@ import pyproj
 import pandas as pd
 import geopandas as gpd
 import matplotlib.pyplot as plt
+import requests
 import rioxarray as rxr
 import streamlit as st
 from owslib.wms import WebMapService
@@ -15,8 +16,10 @@ import plotly.express as px
 CRS_LIST = pyproj.database.query_crs_info()
 CRS_STR_LIST = [f"{crs.auth_name}:{crs.code} - {crs.name}" for crs in CRS_LIST]
 CRS_DICT = {f"{crs.auth_name}:{crs.code} - {crs.name}": crs for crs in CRS_LIST}
-LIDAR_SERVICE_URL=r"https://data.isgs.illinois.edu/arcgis/services/Elevation/IL_Statewide_Lidar_DEM_WGS/ImageServer/WMSServer?request=GetCapabilities&service=WMS"
-RASTER_SRC_DICT = {"ISGS Statewide Lidar":LIDAR_SERVICE_URL,
+IL_LIDAR_URL=r"https://data.isgs.illinois.edu/arcgis/services/Elevation/IL_Statewide_Lidar_DEM_WGS/ImageServer/WMSServer?request=GetCapabilities&service=WMS"
+GMRT_URL = r"https://www.gmrt.org:443/services/GridServer?minlongitude=-88.4&maxlongitude=-88.2%2C%20&minlatitude=40.1&maxlatitude=40.3&format=geotiff&resolution=default&layer=topo"
+RASTER_SRC_DICT = {"ISGS Statewide Lidar":IL_LIDAR_URL,
+                   "Global Multi-Resolution Topography (~30m)":GMRT_URL,
                    "Other Web Service":"get_service_info",
                    "Raster file":"get_file_name"
                    }
@@ -82,18 +85,37 @@ def main():
 
         with raster_expander:
             st.selectbox(label="Select raster/elevation data source",
-                     options=["ISGS Statewide Lidar", "Other Web Service", "Raster file"],
+                     options=list(RASTER_SRC_DICT.keys()),
                      index=0, key='raster_source_select',
                      help="Select the source you would like to use for elevation.",
                      on_change=on_raster_source_change,
-                     disabled=True,
+                     disabled=False,
                      )
+
+            rsource = st.session_state.raster_source_select
+            rCRSdisable = False
+            elevUnit = "Foot"
+            if 'ISGS' in rsource:
+                st.session_state.raster_crs = "EPSG:3857 - WGS 84 / Pseudo-Mercator"
+                rCRSdisable = True
+            elif "Global" in rsource:
+                st.session_state.raster_crs = "EPSG:4326 - WGS 84"
+                rCRSdisable = True
+                elevUnit = "Meter"
 
             st.selectbox(label="Raster CRS",
                      options=CRS_STR_LIST,
-                     index=CRS_STR_LIST.index("EPSG:3857 - WGS 84 / Pseudo-Mercator"),
+                     #index=CRS_STR_LIST.index("EPSG:3857 - WGS 84 / Pseudo-Mercator"),
                      key='raster_crs',
-                     disabled=True)
+                     disabled=rCRSdisable)
+
+            st.segmented_control(label='Elevation Unit',
+                             options=["Foot",
+                                      "Meter"],
+                             selection_mode='single',
+                             default=elevUnit   ,
+                             key="elev_unit",
+                             )
 
         crs_expander = st.expander(label='Commonly used CRS',
                                    )
@@ -119,6 +141,11 @@ def get_crs_info():
 
 # FUNCTIONS
 def on_raster_source_change():
+    rsource = st.session_state.raster_source_select
+    if 'ISGS' in rsource:
+        st.session_state.raster_crs = "EPSG:3857 - WGS 84 / Pseudo-Mercator"
+    elif "Global" in rsource:
+        st.session_state.raster_crs = "EPSG:4326 - WGS 84"
     return
 
 def on_xcoord_change():
@@ -141,17 +168,18 @@ def get_elevation(coords=None,
                   elevation_source=None, elev_source_type='service', 
                   raster_crs=None, show_plot=True):
 
-    print("GETTING ELEVATION")
-
     if coords is None:
         coords = (st.session_state.xcoord, st.session_state.ycoord)
         #if st.session_state.points_source=='Enter coords.':
             #coords = (-88.857362, 42.25637743)
 
-    # Leave everything below here alone
-    if elevation_source is None:
-        elevation_source = LIDAR_SERVICE_URL#RASTER_SRC_DICT[st.session_state['raster_source_select']]
+    # Get the correct/specified raster source
+    if "ISGS" in st.session_state.raster_source_select:
+        elevation_source = IL_LIDAR_URL
+    else:
+        elevation_source = GMRT_URL
 
+    # Get values for other points
     if points_crs is None:
         points_crs = int(CRS_DICT[st.session_state.point_crs].code)
         points_crs_name = CRS_DICT[st.session_state.point_crs].name
@@ -164,11 +192,8 @@ def get_elevation(coords=None,
         output_crs = int(CRS_DICT[st.session_state.output_crs].code)
         output_crs_name = CRS_DICT[st.session_state.output_crs].name
     
-    elev_wms = wms_statewide_lidar_url = elevation_source
-
     ptCoordTransformerOUT = pyproj.Transformer.from_crs(crs_from=points_crs, crs_to=output_crs, always_xy=True)
     ptCoordTransformerRaster = pyproj.Transformer.from_crs(crs_from=points_crs, crs_to=raster_crs, always_xy=True)
-    wms_statewide_lidar_url = elev_wms
 
     if isinstance(coords, (tuple, list)):
         xcoord, ycoord = coords
@@ -219,76 +244,99 @@ def get_elevation(coords=None,
             yPad = 1000
 
     if elev_source_type=='service':
-        wms = WebMapService(wms_statewide_lidar_url)
+        if "ISGS" in st.session_state.raster_source_select:
+            wms = WebMapService(elevation_source)
 
-        layer_name = '0'
-        layer = wms[layer_name]
+            layer_name = '0'
+            layer = wms[layer_name]
 
-        bbox = (minXRast-xPad, minYRast-yPad, maxXRast+xPad, maxYRast+yPad)
-        img = wms.getmap(
-            layers=['IL_Statewide_Lidar_DEM_WGS:None'],
-            srs='EPSG:3857',
-            bbox=bbox,
-            size=(256, 256),
-            format='image/tiff',
-            transparent=True
-            )
+            bbox = (minXRast-xPad, minYRast-yPad, maxXRast+xPad, maxYRast+yPad)
+            img = wms.getmap(
+                layers=['IL_Statewide_Lidar_DEM_WGS:None'],
+                srs='EPSG:3857',
+                bbox=bbox,
+                size=(256, 256),
+                format='image/tiff',
+                transparent=True
+                )
 
-        bio = BytesIO(img.read())
-        lidarData_rxr = rxr.open_rasterio(bio)
-        lidarData = lidarData_rxr.rio.reproject(output_crs)
-        if 'band' in lidarData.dims:
-            lidarData = lidarData.isel(band=0)
+            bio = BytesIO(img.read())
+            elevData_rxr = rxr.open_rasterio(bio)
+            elevData_ft = elevData_rxr.rio.reproject(output_crs)
+            elevData_m = elevData_ft * 0.3048
+        else:
+            response = requests.get(url=GMRT_URL)
+            with BytesIO(response.content) as f:
+                elevData_rxr = rxr.open_rasterio(f)
+            elevData_m = elevData_rxr.rio.reproject(output_crs) 
+
+        if 'band' in elevData_m.dims:
+            elevData_m = elevData_m.isel(band=0)
+
+        elevData_ft = elevData_m / 0.3048
 
     elif elev_source_type == 'file':
-        lidarData_rxr = rxr.open_rasterio(elevation_source)
-        lidarData = lidarData_rxr.sel(x=slice(minX-xPad, maxX+xPad), y=slice(maxY+yPad, minY-yPad))
-        lidarData = lidarData.rio.reproject(output_crs)
-    
-    minLidarVal = lidarData.min().values
-    maxLidarVal = lidarData.max().values
-    lidarValRange = maxLidarVal - minLidarVal
-    
-    vMin = minLidarVal + 0.2*lidarValRange
-    vMax = maxLidarVal - 0.2*lidarValRange
+        elevData_rxr = rxr.open_rasterio(elevation_source)
+        elevData_rxr= elevData_rxr.rio.reproject(output_crs)
 
-    # Elevation in meters
-    lidarData_m = lidarData * 0.3048
+        if st.session_state.elev_unit == "Foot":
+            elevData_ft = elevData_rxr
+            elevData_m = elevData_ft * 0.3048
+        else:
+            elevData_m = elevData_rxr
+            elevData_ft = elevData_m / 0.3048
 
-    print(lidarData_m)
     # Calculate elevation and add to df
     elev_m = []
     for i, row in coords.iterrows():
-        lidarSel = lidarData_m.copy()
+        lidarSel = elevData_m.copy()
         xc = row[f"{output_crs}_x"]
         yc = row[f"{output_crs}_y"]
 
         elevVal = lidarSel.sel(x=xc, y=yc, 
                                method='nearest').values
 
+        print(elevVal)
         elev_m.append(elevVal)
         
     coords['Elev_m'] = elev_m
+    coords['Elev_m'] = coords['Elev_m'].astype(float)
     coords['Elev_ft'] = coords['Elev_m'] / 0.3048
 
     if show_plot:
-        lidarDA = lidarData
-        data = lidarDA.values
-        x_coords = lidarDA.x.values  
-        y_coords = lidarDA.y.values
+        # Prepare data for plotting
+        minLidarVal = elevData_m.min().values
+        maxLidarVal = elevData_m.max().values
+        lidarValRange = maxLidarVal - minLidarVal
+        
+        vMin = minLidarVal + 0.2*lidarValRange
+        vMax = maxLidarVal - 0.2*lidarValRange
+        
+        data = elevData_m.values
+        x_coords = elevData_m.x.values  
+        y_coords = elevData_m.y.values
 
-        # Create heatmap
+        import numpy as np
+        customDataArr = np.round(elevData_ft.values, 2).astype(str)
+
+
+        print(f"data shape: {data.shape}")
+        print(f"customDataArr shape: {customDataArr.shape}")
+
+
+        # Create elevation heatmap
         fig = go.Figure(data=go.Heatmap(
             z=data,
             x=x_coords,
             y=y_coords,
             colorscale='Geyser',
+            text=customDataArr,
             zmin=vMin,
             zmax=vMax,
             name='Elevation',
+            hovertemplate="Coords: %{x}, %{y}<br>Elev (m): %{z:.2f} m<br>Elev (ft):  %{text} ft<extra></extra>"
         ))
-                
-        #[print(f"{c['Elev_ft']} ft<br>{c['Elev_m']} m") for i, c in coords.iterrows()]
+   
         # Add the point marker
         fig.add_trace(go.Scatter(
             x=coords[f"{output_crs}_x"],
@@ -304,7 +352,6 @@ def get_elevation(coords=None,
             textposition="top right",
             textfont=dict(color="red", size=12),
             name=f"Point Elevation",
-            #showlegend=True
         ))
 
         if len(str(int(minX))) > 4:
@@ -323,22 +370,15 @@ def get_elevation(coords=None,
             height=800,
             xaxis=dict(scaleanchor='y'),
             autosize=True,
-            #showlegend=True,
             coloraxis_colorbar=dict(#yanchor="top", y=1, x=0,
                                     orientation='h',
                                     ticks="outside",
         ))
 
-        #fig.show()
-        #st.session_state.main_container.pyplot(fig)
-        #with st.session_state.main_container:
-        #    st.plotly_chart(fig)
-
     st.session_state.elev_fig = fig
     st.session_state.coords_df = coords
     st.balloons()
-    return #fig, coords
-
+    return 
 
 if __name__ == "__main__":
     main()
