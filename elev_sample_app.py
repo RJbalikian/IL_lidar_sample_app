@@ -94,14 +94,17 @@ def main():
 
             rsource = st.session_state.raster_source_select
             rCRSdisable = False
+            elevUnitDisable = False
             elevUnit = "Foot"
             if 'ISGS' in rsource:
                 st.session_state.raster_crs = "EPSG:3857 - WGS 84 / Pseudo-Mercator"
                 rCRSdisable = True
+                elevUnitDisable = True
             elif "Global" in rsource:
                 st.session_state.raster_crs = "EPSG:4326 - WGS 84"
                 rCRSdisable = True
                 elevUnit = "Meter"
+                elevUnitDisable = True
 
             st.selectbox(label="Raster CRS",
                      options=CRS_STR_LIST,
@@ -113,7 +116,8 @@ def main():
                              options=["Foot",
                                       "Meter"],
                              selection_mode='single',
-                             default=elevUnit   ,
+                             default=elevUnit,
+                             disabled=elevUnitDisable,
                              key="elev_unit",
                              )
 
