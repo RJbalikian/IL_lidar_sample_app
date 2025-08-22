@@ -300,7 +300,6 @@ def get_elevation(coords=None,
         elevVal = lidarSel.sel(x=xc, y=yc, 
                                method='nearest').values
 
-        print(elevVal)
         elev_m.append(elevVal)
         
     coords['Elev_m'] = elev_m
@@ -322,11 +321,6 @@ def get_elevation(coords=None,
 
         import numpy as np
         customDataArr = np.round(elevData_ft.values, 2).astype(str)
-
-
-        print(f"data shape: {data.shape}")
-        print(f"customDataArr shape: {customDataArr.shape}")
-
 
         # Create elevation heatmap
         fig = go.Figure(data=go.Heatmap(
