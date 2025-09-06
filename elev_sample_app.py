@@ -17,9 +17,9 @@ CRS_LIST = pyproj.database.query_crs_info()
 CRS_STR_LIST = [f"{crs.auth_name}:{crs.code} - {crs.name}" for crs in CRS_LIST]
 CRS_DICT = {f"{crs.auth_name}:{crs.code} - {crs.name}": crs for crs in CRS_LIST}
 IL_LIDAR_URL=r"https://data.isgs.illinois.edu/arcgis/services/Elevation/IL_Statewide_Lidar_DEM_WGS/ImageServer/WMSServer?request=GetCapabilities&service=WMS"
-GMRT_URL = r"https://www.gmrt.org:443/services/GridServer?minlongitude=-88.4&maxlongitude=-88.2%2C%20&minlatitude=40.1&maxlatitude=40.3&format=geotiff&resolution=default&layer=topo"
+GMRT_BASE_URL = r"https://www.gmrt.org:443/services/GridServer?minlongitude&maxlongitude%2C%20&minlatitude&maxlatitude&format=geotiff&resolution=default&layer=topo"
 RASTER_SRC_DICT = {"ISGS Statewide Lidar":IL_LIDAR_URL,
-                   "Global Multi-Resolution Topography (~30m)":GMRT_URL,
+                   "Global Multi-Resolution Topography (~30m)":GMRT_BASE_URL,
                    "Other Web Service":"get_service_info",
                    "Raster file":"get_file_name"
                    }
@@ -181,7 +181,7 @@ def get_elevation(coords=None,
     if "ISGS" in st.session_state.raster_source_select:
         elevation_source = IL_LIDAR_URL
     else:
-        elevation_source = GMRT_URL
+        elevation_source = GMRT_BASE_URL
 
     # Get values for other points
     if points_crs is None:
@@ -201,6 +201,7 @@ def get_elevation(coords=None,
 
     if isinstance(coords, (tuple, list)):
         xcoord, ycoord = coords
+        print(xcoord, ycoord)
 
         xcoord_OUT, ycoord_OUT = ptCoordTransformerOUT.transform(xcoord, ycoord)
         xcoord_RAST, ycoord_RAST = ptCoordTransformerRaster.transform(xcoord, ycoord)
@@ -247,6 +248,14 @@ def get_elevation(coords=None,
         if yPad > 1000:
             yPad = 1000
 
+    xPad = max(xPad, yPad)
+    yPad = max(xPad, yPad)
+
+    rasterXMin = minXRast-xPad
+    rasterXMax = maxXRast+xPad
+
+    rasterYMin = minYRast-yPad
+    rasterYMax = maxYRast+yPad
     if elev_source_type=='service':
         if "ISGS" in st.session_state.raster_source_select:
             wms = WebMapService(elevation_source)
@@ -254,7 +263,8 @@ def get_elevation(coords=None,
             layer_name = '0'
             layer = wms[layer_name]
 
-            bbox = (minXRast-xPad, minYRast-yPad, maxXRast+xPad, maxYRast+yPad)
+            bbox = (rasterXMin, rasterYMin, rasterXMax, rasterYMax)
+
             img = wms.getmap(
                 layers=['IL_Statewide_Lidar_DEM_WGS:None'],
                 srs='EPSG:3857',
@@ -269,6 +279,13 @@ def get_elevation(coords=None,
             elevData_ft = elevData_rxr.rio.reproject(output_crs)
             elevData_m = elevData_ft * 0.3048
         else:
+            #GMRT_URL = r"https://www.gmrt.org:443/services/GridServer?minlongitude=-88.4&maxlongitude=-88.2%2C%20&minlatitude=40.1&maxlatitude=40.3&format=geotiff&resolution=default&layer=topo"
+            GMRT_URL = GMRT_BASE_URL.replace('minlongitude', f"minlongitude={rasterXMin:0.4f}")
+            GMRT_URL = GMRT_URL.replace('maxlongitude', f"maxlongitude={rasterXMax:0.4f}")
+            GMRT_URL = GMRT_URL.replace('minlatitude', f"minlatitude={rasterYMin:0.4f}")
+            GMRT_URL = GMRT_URL.replace('maxlatitude', f"maxlatitude={rasterYMax:0.4f}")
+
+
             response = requests.get(url=GMRT_URL)
             with BytesIO(response.content) as f:
                 elevData_rxr = rxr.open_rasterio(f)
@@ -322,6 +339,8 @@ def get_elevation(coords=None,
         import numpy as np
         customDataArr = np.round(elevData_ft.values, 2).astype(str)
 
+        print("ELEVDATA", data, x_coords, y_coords)
+
         # Create elevation heatmap
         fig = go.Figure(data=go.Heatmap(
             z=data,
@@ -364,6 +383,8 @@ def get_elevation(coords=None,
             yaxis_title="Y Coordinate",
             yaxis_tickformat=tickFormat,
             xaxis_tickformat=tickFormat,
+            xaxis_range=[min(x_coords), max(x_coords)],
+            yaxis_range=[min(y_coords), max(y_coords)],
             width=800,
             height=800,
             xaxis=dict(scaleanchor='y'),
