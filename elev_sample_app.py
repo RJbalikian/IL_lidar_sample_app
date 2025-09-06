@@ -332,8 +332,8 @@ def get_elevation(coords=None,
         maxLidarVal = elevData_m.max().values
         lidarValRange = maxLidarVal - minLidarVal
         
-        vMin = minLidarVal + 0.2*lidarValRange
-        vMax = maxLidarVal - 0.2*lidarValRange
+        vMin = minLidarVal + 0.1*lidarValRange
+        vMax = maxLidarVal - 0.1*lidarValRange
         
         data = elevData_m.values
         x_coords = elevData_m.x.values  
