@@ -79,6 +79,10 @@ def main():
                   type='primary',
                   )
 
+        st.slider("Zoom level", min_value=1, max_value=10, value=1, step=1,
+                  help="Select the zoom level of the map (higher is more zoomed)",
+                  key='zoom_level')
+
         st.divider()
         
         raster_expander = st.expander(label='Raster Info.')
@@ -201,7 +205,6 @@ def get_elevation(coords=None,
 
     if isinstance(coords, (tuple, list)):
         xcoord, ycoord = coords
-        print(xcoord, ycoord)
 
         xcoord_OUT, ycoord_OUT = ptCoordTransformerOUT.transform(xcoord, ycoord)
         xcoord_RAST, ycoord_RAST = ptCoordTransformerRaster.transform(xcoord, ycoord)
@@ -239,17 +242,17 @@ def get_elevation(coords=None,
     if float(xPad) == 0.0:
         xPad = maxXRast * 0.01
         xPad = abs(xPad)
-        if abs(xPad) > 1000:
-            xPad = 1000
+        if abs(xPad) > 5000:
+            xPad = 5000
 
     if float(yPad) == 0.0:
         yPad = maxYRast * 0.01
         yPad = abs(yPad)
-        if yPad > 1000:
-            yPad = 1000
+        if yPad > 5000:
+            yPad = 5000
 
-    xPad = max(xPad, yPad)
-    yPad = max(xPad, yPad)
+    xPad = max(xPad, yPad) / st.session_state.zoom_level
+    yPad = max(xPad, yPad) / st.session_state.zoom_level
 
     rasterXMin = minXRast-xPad
     rasterXMax = maxXRast+xPad
@@ -338,8 +341,6 @@ def get_elevation(coords=None,
 
         import numpy as np
         customDataArr = np.round(elevData_ft.values, 2).astype(str)
-
-        print("ELEVDATA", data, x_coords, y_coords)
 
         # Create elevation heatmap
         fig = go.Figure(data=go.Heatmap(
